@@ -15,7 +15,7 @@ torch._dynamo.config.suppress_errors = True
 CIFAR_MEAN = torch.tensor((0.4914, 0.4822, 0.4465), dtype=torch.half)
 CIFAR_STD = torch.tensor((0.247, 0.2435, 0.2616), dtype=torch.half)
 
-# @torch.compile()
+@torch.compile()
 def batch_color_jitter(inputs, brightness_range: float, contrast_range: float):
     B = inputs.shape[0]
     device = inputs.device
@@ -30,12 +30,12 @@ def batch_color_jitter(inputs, brightness_range: float, contrast_range: float):
     inputs = inputs * contrast_scale
     return inputs
 
-# @torch.compile()
+@torch.compile()
 def batch_flip_lr(inputs):
     flip_mask = (torch.rand(len(inputs), device=inputs.device) < 0.5).view(-1, 1, 1, 1)
     return torch.where(flip_mask, inputs.flip(-1), inputs)
 
-# @torch.compile()
+@torch.compile()
 def batch_crop(images, crop_size):
     B, C, H_padded, W_padded = images.shape
     r = (H_padded - crop_size) // 2
@@ -70,7 +70,7 @@ class CifarLoader:
             images = torch.tensor(dset.data)
             labels = torch.tensor(dset.targets)
             torch.save({"images": images, "labels": labels, "classes": dset.classes}, data_path)
-        data = torch.load(data_path, map_location=torch.device("cpu"), weights_only=True) # cuda when gpu
+        data = torch.load(data_path, map_location=torch.device("cuda"), weights_only=True)
         self.images, self.labels, self.classes = (
             data["images"],
             data["labels"],
@@ -89,7 +89,7 @@ class CifarLoader:
         self.drop_last = train
         self.shuffle = train
         # Pre-allocate indices tensor for better performance
-        self._indices = torch.empty(len(self.images), dtype=torch.long, device="cpu") # cuda when gpu
+        self._indices = torch.empty(len(self.images), dtype=torch.long, device="cuda")
 
     def __len__(self):
         return (
@@ -108,8 +108,7 @@ class CifarLoader:
             # Pre-pad images to save time when doing random translation
             pad = self.aug.get("translate", 0)
             if pad > 0:
-                # self.proc_images["pad"] = F.pad(images, (pad,)*4, "reflect") # does not work on cpu
-                self.proc_images["pad"] = F.pad(images.float(), (pad,)*4, "reflect").half()
+                self.proc_images["pad"] = F.pad(images, (pad,)*4, "reflect")
 
         if self.aug.get("translate", 0) > 0:
             images = batch_crop(self.proc_images["pad"], self.images.shape[-2])

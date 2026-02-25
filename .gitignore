@@ -5,5 +5,6 @@ papers/
 data/
 cifar10/
 venv/
+*.out
 
 questions.md

@@ -6,11 +6,8 @@
 #############################################
 
 import os
-# os.environ["TORCHINDUCTOR_CACHE_DIR"] = r"C:\tmp\torchinductor"
 import logging
-# disable warnings on cpu
-# logging.getLogger("torch._dynamo").setLevel(logging.ERROR)
-# logging.getLogger("torch._inductor").setLevel(logging.ERROR)
+
 import sys
 with open(sys.argv[0]) as f:
     code = f.read()
@@ -67,7 +64,7 @@ def infer(model, loader, tta_level=0):
     def infer_mirror(inputs, net):
         return 0.5 * net(inputs) + 0.5 * net(inputs.flip(-1))
 
-    # @torch.compile(fullgraph=True)
+    @torch.compile()
     def _get_tta_logits(model, images_batch, pad):
         batch_size = images_batch.shape[0]
         padded_inputs = F.pad(images_batch, (pad,) * 4, "reflect")
@@ -82,7 +79,7 @@ def infer(model, loader, tta_level=0):
         averaged_logits = reshaped_logits.mean(dim=0)
         return averaged_logits
 
-    # @torch.compile()
+    @torch.compile()
     def tta(model, test_images) -> torch.Tensor:
         with torch.no_grad():
             model.eval()
@@ -145,7 +142,7 @@ def evaluate(model, loader, tta_level=0):
 ############################################
 
 def main(run, model):
-    training_batch_size = 256
+    training_batch_size = 1536
 
     test_loader = CifarLoader("cifar10", train=False, batch_size=2000)
     train_loader = CifarLoader(
@@ -186,16 +183,19 @@ def main(run, model):
 
 
     # Compile the forward pass function with reduced overhead
-    # @torch.compile(mode="max-autotune", fullgraph=True)
+    @torch.compile()
     def forward_step(inputs, labels, whiten_bias_grad):
         outputs = model(inputs, whiten_bias_grad=whiten_bias_grad)
-        # loss = F.cross_entropy(outputs, labels, label_smoothing=0.09, reduction="sum") # does not work for cpu
-        loss = F.cross_entropy(outputs.float(), labels, label_smoothing=0.09, reduction="sum")
+        loss = F.cross_entropy(outputs, labels, label_smoothing=0.09, reduction="sum")
         return loss
     
     optimizer = Adam(model.parameters(), lr=3*1e-4)
 
-    for epoch in range(ceil(total_train_steps / len(train_loader))):
+    n_epochs = ceil(total_train_steps / len(train_loader))
+    print("Number of epochs")
+    print(n_epochs)
+
+    for epoch in range(n_epochs):
         ####################
         #     Training     #
         ####################
@@ -227,14 +227,13 @@ def main(run, model):
     epoch = "eval"
     train_acc = evaluate(model, train_loader, tta_level=0)
     val_acc = evaluate(model, test_loader, tta_level=0)
-    print_training_details(locals(), is_final_entry=True)
+    # print_training_details(locals(), is_final_entry=True)
     return (val_acc, tta_val_acc)
 
 if __name__ == "__main__":
-    device = "cpu" # as long as I do not get compute 
-    model = CifarNet()
+    model = CifarNet().cuda().to(memory_format=torch.channels_last)
     print(f"number of parameters: {sum([p.numel() for p in model.parameters()])}")
-    model.compile(mode="max-autotune")
+    # model.compile(mode="max-autotune")
     print_columns(logging_columns_list, is_head=True)
     val_acc, tta_val_acc = main("warmup", model)
     print(val_acc, tta_val_acc)
