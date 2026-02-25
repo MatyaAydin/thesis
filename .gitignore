@@ -4,5 +4,6 @@ __pycache__/
 papers/
 data/
 cifar10/
+venv/
 
 questions.md
